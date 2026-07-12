@@ -1,25 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, BriefcaseBusiness, CircleAlert, House, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { Preferences } from '../types';
 
 const districts = ['浦东新区', '静安区', '徐汇区', '杨浦区', '闵行区', '宝山区'];
 const soft = ['近地铁', '采光好', '安静', '商业便利', '适合家庭', '性价比'];
+export const defaultPreferences: Preferences = {
+  city: '上海', districts: [], monthly_rent_max: 6000, monthly_total_max: 6800,
+  bedrooms_min: 1, area_min: 30, rental_type: 'entire', move_in_date: '2026-08-01',
+  lease_months: 12, accepts_agent_fee: false, needs_elevator: true, allows_pets: false,
+  commute_mode: 'transit', destinations: [{ label: '我的公司', address: '上海市浦东新区陆家嘴', weight: 1, max_minutes: 45 }],
+  soft_preferences: ['近地铁', '采光好'],
+};
 
-export function SearchWizard({ onSubmit, loading, lang }: {
+export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPreferencesChange }: {
   onSubmit: (value: Preferences) => void;
   loading: boolean;
   lang: 'zh' | 'en';
+  initialPreferences?: Preferences;
+  onPreferencesChange?: (value: Preferences) => void;
 }) {
   const [step, setStep] = useState(0);
   const [customPreference, setCustomPreference] = useState('');
-  const [form, setForm] = useState<Preferences>({
-    city: '上海', districts: [], monthly_rent_max: 6000, monthly_total_max: 6800,
-    bedrooms_min: 1, area_min: 30, rental_type: 'entire', move_in_date: '2026-08-01',
-    lease_months: 12, accepts_agent_fee: false, needs_elevator: true, allows_pets: false,
-    commute_mode: 'transit',
-    destinations: [{ label: '我的公司', address: '上海市浦东新区陆家嘴', weight: 1, max_minutes: 45 }],
-    soft_preferences: ['近地铁', '采光好'],
-  });
+  const [form, setForm] = useState<Preferences>(initialPreferences || defaultPreferences);
+  useEffect(() => { onPreferencesChange?.(form); }, [form, onPreferencesChange]);
   const patch = (value: Partial<Preferences>) => setForm({ ...form, ...value });
   const updateDestination = (index: number, value: Partial<Preferences['destinations'][number]>) => patch({ destinations: form.destinations.map((destination, current) => current === index ? { ...destination, ...value } : destination) });
   const addDestination = () => form.destinations.length < 4 && patch({ destinations: [...form.destinations, { label: `家庭成员${form.destinations.length + 1}`, address: '', weight: 0.5, max_minutes: 45 }] });

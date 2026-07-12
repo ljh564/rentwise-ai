@@ -3,6 +3,11 @@ services:
     build: ./backend
     ports: ["8000:8000"]
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rentscout:rentscout_dev@postgres:5432/rentscout
+    depends_on:
+      postgres:
+        condition: service_healthy
   frontend:
     build: ./frontend
     ports: ["5173:80"]
@@ -14,6 +19,11 @@ services:
       POSTGRES_USER: rentscout
       POSTGRES_PASSWORD: rentscout_dev
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rentscout -d rentscout"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   redis:
     image: redis:7-alpine
 volumes:
