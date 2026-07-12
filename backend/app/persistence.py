@@ -4,7 +4,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, select
+from sqlalchemy import DateTime, ForeignKey, JSON, String, UniqueConstraint, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -28,6 +28,40 @@ class RentalProfile(Base):
     anonymous_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("anonymous_users.id", ondelete="CASCADE"), primary_key=True)
     preferences: Mapped[dict] = mapped_column(JSON, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class Favorite(Base):
+    __tablename__ = "favorites"
+    __table_args__ = (UniqueConstraint("anonymous_user_id", "listing_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    anonymous_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("anonymous_users.id", ondelete="CASCADE"), index=True)
+    listing_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    listing_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class SearchHistory(Base):
+    __tablename__ = "search_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    anonymous_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("anonymous_users.id", ondelete="CASCADE"), index=True)
+    request_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    result_summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    provider: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class RecommendationFeedback(Base):
+    __tablename__ = "recommendation_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    anonymous_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("anonymous_users.id", ondelete="CASCADE"), index=True)
+    search_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("search_history.id", ondelete="SET NULL"), nullable=True)
+    listing_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    feedback_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://rentscout:rentscout_dev@postgres:5432/rentscout")

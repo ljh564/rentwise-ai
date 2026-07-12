@@ -1,11 +1,14 @@
 import os
+import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
 
-from app.models import RentalPreferences, SearchResponse
-from app.persistence import RentalProfile, SessionLocal, authenticate_anonymous, create_anonymous_session, create_schema
+from app.models import Listing, RentalPreferences, SearchResponse
+from app.persistence import Favorite, RecommendationFeedback, RentalProfile, SearchHistory, SessionLocal, authenticate_anonymous, create_anonymous_session, create_schema
 from app.providers.amap import AMapError, AMapProvider
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
 from app.service import RentalDecisionService
@@ -66,14 +69,77 @@ async def save_profile(preferences: RentalPreferences, user_id=Depends(anonymous
         return preferences
 
 
+class FavoriteInput(BaseModel):
+    listing: Listing
+
+
+class FeedbackInput(BaseModel):
+    listing_id: str
+    search_id: str | None = None
+    feedback_type: str = Field(pattern="^(like|dislike|not_relevant|too_expensive|commute_too_long|missing_preference)$")
+    reason: str | None = Field(default=None, max_length=300)
+
+
+@app.get("/api/favorites")
+async def favorites(user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        rows = (await db.scalars(select(Favorite).where(Favorite.anonymous_user_id == user_id).order_by(Favorite.created_at.desc()))).all()
+        return [{"listing_id": row.listing_id, "listing": row.listing_snapshot, "created_at": row.created_at} for row in rows]
+
+
+@app.post("/api/favorites", status_code=201)
+async def add_favorite(payload: FavoriteInput, user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        existing = await db.scalar(select(Favorite).where(Favorite.anonymous_user_id == user_id, Favorite.listing_id == payload.listing.id))
+        if not existing:
+            db.add(Favorite(anonymous_user_id=user_id, listing_id=payload.listing.id, listing_snapshot=payload.listing.model_dump(mode="json")))
+            await db.commit()
+        return {"listing_id": payload.listing.id, "saved": True}
+
+
+@app.delete("/api/favorites/{listing_id}", status_code=204)
+async def remove_favorite(listing_id: str, user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        await db.execute(delete(Favorite).where(Favorite.anonymous_user_id == user_id, Favorite.listing_id == listing_id))
+        await db.commit()
+
+
+@app.get("/api/search-history")
+async def search_history(user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        rows = (await db.scalars(select(SearchHistory).where(SearchHistory.anonymous_user_id == user_id).order_by(SearchHistory.created_at.desc()).limit(20))).all()
+        return [{"id": str(row.id), "request": row.request_snapshot, "summary": row.result_summary, "provider": row.provider, "created_at": row.created_at} for row in rows]
+
+
+@app.post("/api/feedback", status_code=201)
+async def save_feedback(payload: FeedbackInput, user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        search_id = uuid.UUID(payload.search_id) if payload.search_id else None
+        db.add(RecommendationFeedback(anonymous_user_id=user_id, search_id=search_id, listing_id=payload.listing_id, feedback_type=payload.feedback_type, reason=payload.reason))
+        await db.commit()
+        return {"saved": True}
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "listing_provider": service.listings.name, "map_provider": service.maps.name}
 
 
 @app.post("/api/search", response_model=SearchResponse)
-async def search(preferences: RentalPreferences):
+async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)):
     try:
-        return await service.search(preferences)
+        response = await service.search(preferences)
+        async with SessionLocal() as db:
+            history = SearchHistory(
+                anonymous_user_id=user_id,
+                request_snapshot=preferences.model_dump(mode="json"),
+                result_summary={"total_candidates": response.total_candidates, "top_listing_ids": [item.listing.id for item in response.recommendations[:5]]},
+                provider=response.provider,
+            )
+            db.add(history)
+            await db.commit()
+            await db.refresh(history)
+            response.search_id = str(history.id)
+        return response
     except AMapError as exc:
         raise HTTPException(status_code=503, detail="高德地图暂时无法返回真实通勤数据，请稍后重试。") from exc
