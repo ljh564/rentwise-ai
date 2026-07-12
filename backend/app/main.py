@@ -164,7 +164,13 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
             history = SearchHistory(
                 anonymous_user_id=user_id,
                 request_snapshot=preferences.model_dump(mode="json"),
-                result_summary={"total_candidates": response.total_candidates, "top_listing_ids": [item.listing.id for item in response.recommendations[:5]]},
+                result_summary={
+                    "total_candidates": response.total_candidates,
+                    "top_listing_ids": [item.listing.id for item in response.recommendations[:5]],
+                    "recommendations": [item.model_dump(mode="json") for item in response.recommendations[:5]],
+                    "assumptions": response.assumptions,
+                    "llm_enhanced": response.llm_enhanced,
+                },
                 provider=response.provider,
             )
             db.add(history)
