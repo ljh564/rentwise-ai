@@ -49,6 +49,9 @@ class RentalDecisionService:
         self.maps = map_provider
         self.commute_skill = CommutePlanningSkill(map_provider)
         self.llm = llm
+        self.graph = self._compile_graph()
+
+    def _compile_graph(self, checkpointer=None):
         builder = StateGraph(DecisionState)
         builder.add_node("search_candidates", self._search_candidates)
         builder.add_node("interpret_preferences", self._interpret_preferences)
@@ -61,7 +64,10 @@ class RentalDecisionService:
         builder.add_edge("evaluate_and_rank", "explain_recommendations")
         builder.add_edge("explain_recommendations", "finalize_response")
         builder.add_edge("finalize_response", END)
-        self.graph = builder.compile()
+        return builder.compile(checkpointer=checkpointer)
+
+    def enable_checkpoints(self, checkpointer) -> None:
+        self.graph = self._compile_graph(checkpointer)
 
     async def _search_candidates(self, state: DecisionState) -> DecisionState:
         candidates = await self.listings.search(state["preferences"])
@@ -162,8 +168,13 @@ class RentalDecisionService:
         response = SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", llm_enhanced=state.get("llm_enhanced", False), llm_preferences_parsed=state.get("llm_preferences_parsed", False), llm_explanations_generated=state.get("llm_explanations_generated", False), llm_tokens=state.get("llm_tokens", 0), total_candidates=len(state["candidates"]), recommendations=state["recommendations"], assumptions=assumptions)
         return {"response": response, "trace": [*state.get("trace", []), "finalize_response"]}
 
-    async def search_with_trace(self, prefs: RentalPreferences, feedback_adjustments: dict[str, float] | None = None) -> tuple[SearchResponse, list[str]]:
-        state = await self.graph.ainvoke({"preferences": prefs, "trace": [], "feedback_adjustments": feedback_adjustments or {}})
+    async def search_with_trace(self, prefs: RentalPreferences, feedback_adjustments: dict[str, float] | None = None, thread_id: str | None = None) -> tuple[SearchResponse, list[str]]:
+        config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+        state = await self.graph.ainvoke({"preferences": prefs, "trace": [], "feedback_adjustments": feedback_adjustments or {}}, config)
+        return state["response"], state["trace"]
+
+    async def resume_with_trace(self, thread_id: str) -> tuple[SearchResponse, list[str]]:
+        state = await self.graph.ainvoke(None, {"configurable": {"thread_id": thread_id}})
         return state["response"], state["trace"]
 
     async def search(self, prefs: RentalPreferences) -> SearchResponse:

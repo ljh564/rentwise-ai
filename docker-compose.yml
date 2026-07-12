@@ -6,6 +6,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://rentscout:rentscout_dev@postgres:5432/rentscout
       REDIS_URL: redis://redis:6379/0
+      CHECKPOINT_DATABASE_URL: postgresql://rentscout:rentscout_dev@postgres:5432/rentscout
     depends_on:
       postgres:
         condition: service_healthy

@@ -16,6 +16,7 @@ from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
 from app.service import RentalDecisionService
 from app.skills.contract import ContractReviewReport, RentalContractReviewSkill
 from app.skills.listing_image import ListingImageAnalysisSkill, ListingImageReport
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 load_dotenv()
 
@@ -32,11 +33,23 @@ llm = OpenAICompatibleLLM(os.getenv("LLM_BASE_URL", ""), os.getenv("LLM_API_KEY"
 service = RentalDecisionService(MockShanghaiListingProvider(), map_provider, llm)
 contract_skill = RentalContractReviewSkill(llm)
 listing_image_skill = ListingImageAnalysisSkill(llm)
+checkpoint_context = None
 
 
 @app.on_event("startup")
 async def startup() -> None:
+    global checkpoint_context
     await create_schema()
+    checkpoint_context = AsyncPostgresSaver.from_conn_string(os.getenv("CHECKPOINT_DATABASE_URL", "postgresql://rentscout:rentscout_dev@postgres:5432/rentscout"))
+    saver = await checkpoint_context.__aenter__()
+    await saver.setup()
+    service.enable_checkpoints(saver)
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    if checkpoint_context:
+        await checkpoint_context.__aexit__(None, None, None)
 
 
 async def anonymous_user(
@@ -214,7 +227,7 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
         weights = {"like": 3, "dislike": -4, "not_relevant": -5, "too_expensive": -3, "commute_too_long": -3, "missing_preference": -2}
         for item in feedback_rows:
             feedback_adjustments[item.listing_id] = max(-10, min(10, feedback_adjustments.get(item.listing_id, 0) + weights.get(item.feedback_type, 0)))
-        response, trace = await service.search_with_trace(preferences, feedback_adjustments)
+        response, trace = await service.search_with_trace(preferences, feedback_adjustments, str(run.id))
         async with SessionLocal() as db:
             history = SearchHistory(
                 anonymous_user_id=user_id,
@@ -248,3 +261,19 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
             stored_run.completed_at = datetime.now(timezone.utc)
             await db.commit()
         raise HTTPException(status_code=503, detail="高德地图暂时无法返回真实通勤数据，请稍后重试。") from exc
+
+
+@app.post("/api/agent-runs/{run_id}/resume", response_model=SearchResponse)
+async def resume_agent_run(run_id: uuid.UUID, user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        run = await db.scalar(select(AgentRun).where(AgentRun.id == run_id, AgentRun.anonymous_user_id == user_id))
+        if not run: raise HTTPException(status_code=404, detail="Agent 运行记录不存在。")
+        if run.status == "completed": raise HTTPException(status_code=409, detail="该运行已经完成。")
+    try:
+        response, trace = await service.resume_with_trace(str(run_id))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="恢复执行仍然失败，可稍后再次重试。") from exc
+    async with SessionLocal() as db:
+        stored = await db.get(AgentRun, run_id); stored.status = "completed"; stored.trace = trace; stored.completed_at = datetime.now(timezone.utc); await db.commit()
+    response.agent_run_id = str(run_id)
+    return response
