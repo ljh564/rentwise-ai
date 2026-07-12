@@ -64,6 +64,18 @@ class RecommendationFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    anonymous_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("anonymous_users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    trace: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://rentscout:rentscout_dev@postgres:5432/rentscout")
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)

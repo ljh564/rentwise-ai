@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.models import Listing, RentalPreferences, SearchResponse
-from app.persistence import Favorite, RecommendationFeedback, RentalProfile, SearchHistory, SessionLocal, authenticate_anonymous, create_anonymous_session, create_schema
+from app.persistence import AgentRun, Favorite, RecommendationFeedback, RentalProfile, SearchHistory, SessionLocal, authenticate_anonymous, create_anonymous_session, create_schema
 from app.providers.amap import AMapError, AMapProvider
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
 from app.service import RentalDecisionService
@@ -128,8 +129,13 @@ async def health():
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)):
+    async with SessionLocal() as db:
+        run = AgentRun(anonymous_user_id=user_id, status="running", summary={"destinations": len(preferences.destinations)})
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
     try:
-        response = await service.search(preferences)
+        response, trace = await service.search_with_trace(preferences)
         async with SessionLocal() as db:
             history = SearchHistory(
                 anonymous_user_id=user_id,
@@ -141,6 +147,19 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
             await db.commit()
             await db.refresh(history)
             response.search_id = str(history.id)
+            stored_run = await db.get(AgentRun, run.id)
+            stored_run.status = "completed"
+            stored_run.trace = trace
+            stored_run.summary = {"destinations": len(preferences.destinations), "candidates": response.total_candidates, "recommendations": len(response.recommendations)}
+            stored_run.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            response.agent_run_id = str(run.id)
         return response
     except AMapError as exc:
+        async with SessionLocal() as db:
+            stored_run = await db.get(AgentRun, run.id)
+            stored_run.status = "failed"
+            stored_run.summary = {"error": "map_provider_unavailable"}
+            stored_run.completed_at = datetime.now(timezone.utc)
+            await db.commit()
         raise HTTPException(status_code=503, detail="高德地图暂时无法返回真实通勤数据，请稍后重试。") from exc

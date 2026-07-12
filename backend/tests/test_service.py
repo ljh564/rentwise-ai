@@ -15,6 +15,13 @@ async def test_search_ranks_and_explains_results():
 
 
 @pytest.mark.asyncio
+async def test_langgraph_trace_has_expected_nodes():
+    prefs = RentalPreferences(monthly_rent_max=6000, monthly_total_max=6500, move_in_date="2026-08-01", destinations=[Destination(label="公司", address="陆家嘴", weight=1, max_minutes=60)])
+    _, trace = await RentalDecisionService(MockShanghaiListingProvider(), MockMapProvider()).search_with_trace(prefs)
+    assert trace == ["search_candidates", "evaluate_and_rank", "finalize_response"]
+
+
+@pytest.mark.asyncio
 async def test_multi_destination_commute_metrics():
     prefs = RentalPreferences(
         monthly_rent_max=8000,

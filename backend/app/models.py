@@ -86,6 +86,7 @@ class ListingRecommendation(BaseModel):
 
 class SearchResponse(BaseModel):
     search_id: str | None = None
+    agent_run_id: str | None = None
     provider: str
     total_candidates: int
     recommendations: list[ListingRecommendation]
