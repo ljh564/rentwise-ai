@@ -1,4 +1,3 @@
-import asyncio
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -6,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from app.llm import LLMError, OpenAICompatibleLLM
 from app.models import Listing, ListingRecommendation, RentalPreferences, SearchResponse
 from app.providers.base import ListingProvider, MapProvider
+from app.skills.commute import CommutePlanningSkill
 
 
 def true_cost(listing: Listing, months: int) -> tuple[int, int]:
@@ -46,6 +46,7 @@ class RentalDecisionService:
     def __init__(self, listing_provider: ListingProvider, map_provider: MapProvider, llm: OpenAICompatibleLLM | None = None):
         self.listings = listing_provider
         self.maps = map_provider
+        self.commute_skill = CommutePlanningSkill(map_provider)
         self.llm = llm
         builder = StateGraph(DecisionState)
         builder.add_node("search_candidates", self._search_candidates)
@@ -97,16 +98,16 @@ class RentalDecisionService:
         prefs = state["preferences"]
         output = []
         for listing in state["candidates"]:
-            commutes = await asyncio.gather(*[self.maps.commute(listing, destination, prefs.commute_mode) for destination in prefs.destinations])
+            commute_analysis = await self.commute_skill.calculate(listing, prefs)
+            commutes = commute_analysis.commutes
             monthly, first_month = true_cost(listing, prefs.lease_months)
             failures = hard_constraints(listing, prefs, monthly)
             for commute in commutes:
                 if not commute.within_limit: failures.append(f"到{commute.destination}通勤超时")
-            weights = [destination.weight for destination in prefs.destinations]
-            weighted = sum(commute.minutes * weight for commute, weight in zip(commutes, weights)) / sum(weights)
-            worst_commute = max(commute.minutes for commute in commutes)
-            fairness_gap = max(commute.minutes for commute in commutes) - min(commute.minutes for commute in commutes)
-            weekly_total = sum(commute.minutes * 2 * 5 for commute in commutes)
+            weighted = commute_analysis.weighted_minutes
+            worst_commute = commute_analysis.worst_minutes
+            fairness_gap = commute_analysis.fairness_gap_minutes
+            weekly_total = commute_analysis.weekly_total_minutes
             matched_tags = set(state.get("preference_aliases", {}).values())
             preference_hits = [tag for tag in listing.tags if tag in matched_tags]
             cost_score = max(0, 35 - max(0, monthly - prefs.monthly_total_max * .75) / 120)

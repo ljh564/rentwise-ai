@@ -3,6 +3,7 @@ import pytest
 from app.models import Destination, RentalPreferences
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
 from app.service import RentalDecisionService, true_cost
+from app.skills.commute import CommutePlanningSkill
 
 
 @pytest.mark.asyncio
@@ -57,6 +58,16 @@ async def test_multi_destination_commute_metrics():
     assert result.worst_commute_minutes == max(minutes)
     assert result.commute_fairness_gap_minutes == max(minutes) - min(minutes)
     assert result.weekly_total_commute_minutes == sum(minutes) * 10
+
+
+@pytest.mark.asyncio
+async def test_commute_skill_returns_complete_analysis():
+    prefs = RentalPreferences(monthly_rent_max=8000, monthly_total_max=9000, move_in_date="2026-08-01", destinations=[Destination(label="本人", address="陆家嘴", weight=.6, max_minutes=90), Destination(label="配偶", address="南京西路", weight=.4, max_minutes=90)])
+    listing = (await MockShanghaiListingProvider().search(prefs))[0]
+    analysis = await CommutePlanningSkill(MockMapProvider()).calculate(listing, prefs)
+    assert analysis.provider == "mock-map"
+    assert len(analysis.commutes) == 2
+    assert analysis.weekly_total_minutes == sum(item.minutes for item in analysis.commutes) * 10
 
 
 def test_true_cost_amortizes_agent_fee():
