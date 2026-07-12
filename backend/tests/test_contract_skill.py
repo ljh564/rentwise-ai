@@ -35,3 +35,12 @@ async def test_contract_photo_uses_ocr_then_rules():
     assert report.ocr_used is True
     assert report.llm_tokens == 140
     assert "all_repairs_tenant" in {finding.rule_id for finding in report.findings}
+
+
+@pytest.mark.asyncio
+async def test_contract_rules_include_versioned_sources_and_penalty():
+    text = "住房租赁合同。甲方出租人，乙方承租人，房屋地址上海市某路。租期一年，租金5000元，押金5000元。提前退租违约金为三个月租金。维修责任、物业费、争议解决均另行约定。"
+    report = await RentalContractReviewSkill().review("contract.txt", text.encode())
+    finding = next(item for item in report.findings if item.rule_id == "excessive_penalty")
+    assert finding.sources[0].effective_from
+    assert finding.sources[0].checked_at == "2026-07-13"

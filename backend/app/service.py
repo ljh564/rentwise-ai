@@ -40,6 +40,7 @@ class DecisionState(TypedDict, total=False):
     llm_preferences_parsed: bool
     llm_explanations_generated: bool
     llm_tokens: int
+    feedback_adjustments: dict[str, float]
 
 
 class RentalDecisionService:
@@ -113,10 +114,12 @@ class RentalDecisionService:
             cost_score = max(0, 35 - max(0, monthly - prefs.monthly_total_max * .75) / 120)
             commute_score = max(0, 35 - weighted * .5)
             fairness_penalty = fairness_gap * .15 if len(commutes) > 1 else 0
-            score = round(max(0, cost_score + commute_score + len(preference_hits) * 5 + (20 if not failures else max(0, 8 - len(failures) * 2)) - fairness_penalty), 1)
+            feedback_bonus = state.get("feedback_adjustments", {}).get(listing.id, 0)
+            score = round(max(0, cost_score + commute_score + len(preference_hits) * 5 + (20 if not failures else max(0, 8 - len(failures) * 2)) - fairness_penalty + feedback_bonus), 1)
             reasons = [f"真实月均成本约 ¥{monthly:,}", f"加权单程通勤约 {weighted:.0f} 分钟"]
             if len(commutes) > 1: reasons.append(f"最差单程 {worst_commute} 分钟，家庭通勤差距 {fairness_gap} 分钟")
             if preference_hits: reasons.append("符合偏好：" + "、".join(preference_hits))
+            if feedback_bonus: reasons.append(f"历史反馈调整 {feedback_bonus:+.0f} 分")
             tradeoffs = failures or (["首月现金支出较高"] if first_month > monthly * 2.2 else ["暂无明显硬性冲突，仍需线下核验"])
             output.append(ListingRecommendation(listing=listing, monthly_true_cost=monthly, first_month_cash=first_month, weighted_commute_minutes=round(weighted, 1), worst_commute_minutes=worst_commute, weekly_total_commute_minutes=weekly_total, commute_fairness_gap_minutes=fairness_gap, commutes=commutes, hard_constraints_passed=not failures, score=score, reasons=reasons, tradeoffs=tradeoffs))
         output.sort(key=lambda item: (item.hard_constraints_passed, item.score), reverse=True)
@@ -159,8 +162,8 @@ class RentalDecisionService:
         response = SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", llm_enhanced=state.get("llm_enhanced", False), llm_preferences_parsed=state.get("llm_preferences_parsed", False), llm_explanations_generated=state.get("llm_explanations_generated", False), llm_tokens=state.get("llm_tokens", 0), total_candidates=len(state["candidates"]), recommendations=state["recommendations"], assumptions=assumptions)
         return {"response": response, "trace": [*state.get("trace", []), "finalize_response"]}
 
-    async def search_with_trace(self, prefs: RentalPreferences) -> tuple[SearchResponse, list[str]]:
-        state = await self.graph.ainvoke({"preferences": prefs, "trace": []})
+    async def search_with_trace(self, prefs: RentalPreferences, feedback_adjustments: dict[str, float] | None = None) -> tuple[SearchResponse, list[str]]:
+        state = await self.graph.ainvoke({"preferences": prefs, "trace": [], "feedback_adjustments": feedback_adjustments or {}})
         return state["response"], state["trace"]
 
     async def search(self, prefs: RentalPreferences) -> SearchResponse:

@@ -16,6 +16,18 @@ async def test_search_ranks_and_explains_results():
 
 
 @pytest.mark.asyncio
+async def test_feedback_adjustment_changes_score():
+    prefs = RentalPreferences(monthly_rent_max=9000, monthly_total_max=10000, move_in_date="2026-08-01", destinations=[Destination(label="公司", address="陆家嘴", weight=1, max_minutes=90)])
+    service = RentalDecisionService(MockShanghaiListingProvider(), MockMapProvider())
+    baseline, _ = await service.search_with_trace(prefs)
+    listing_id = baseline.recommendations[0].listing.id
+    adjusted, _ = await service.search_with_trace(prefs, {listing_id: -10})
+    new_item = next(item for item in adjusted.recommendations if item.listing.id == listing_id)
+    old_item = next(item for item in baseline.recommendations if item.listing.id == listing_id)
+    assert new_item.score == old_item.score - 10
+
+
+@pytest.mark.asyncio
 async def test_langgraph_trace_has_expected_nodes():
     prefs = RentalPreferences(monthly_rent_max=6000, monthly_total_max=6500, move_in_date="2026-08-01", destinations=[Destination(label="公司", address="陆家嘴", weight=1, max_minutes=60)])
     _, trace = await RentalDecisionService(MockShanghaiListingProvider(), MockMapProvider()).search_with_trace(prefs)

@@ -169,7 +169,13 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
         await db.commit()
         await db.refresh(run)
     try:
-        response, trace = await service.search_with_trace(preferences)
+        async with SessionLocal() as db:
+            feedback_rows = (await db.scalars(select(RecommendationFeedback).where(RecommendationFeedback.anonymous_user_id == user_id))).all()
+        feedback_adjustments: dict[str, float] = {}
+        weights = {"like": 3, "dislike": -4, "not_relevant": -5, "too_expensive": -3, "commute_too_long": -3, "missing_preference": -2}
+        for item in feedback_rows:
+            feedback_adjustments[item.listing_id] = max(-10, min(10, feedback_adjustments.get(item.listing_id, 0) + weights.get(item.feedback_type, 0)))
+        response, trace = await service.search_with_trace(preferences, feedback_adjustments)
         async with SessionLocal() as db:
             history = SearchHistory(
                 anonymous_user_id=user_id,

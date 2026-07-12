@@ -17,6 +17,9 @@ class LegalSource(BaseModel):
     title: str
     provision: str
     url: str
+    effective_from: str
+    jurisdiction: str = "全国"
+    checked_at: str = "2026-07-13"
 
 
 class ContractFinding(BaseModel):
@@ -41,10 +44,10 @@ class ContractReviewReport(BaseModel):
     disclaimer: str = "本结果是基于现行公开法律规则的辅助核验，不替代律师意见或司法机关对具体案件的认定。"
 
 
-SHANGHAI条例 = LegalSource(title="上海市住房租赁条例", provision="第十五条、第十六条", url="https://fgj.sh.gov.cn/gzdt/20221202/f72b607956b34fc4878d55b5a6a9d064.html")
-民法典维修 = LegalSource(title="中华人民共和国民法典", provision="第七百一十二条至第七百一十四条", url="https://gdca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_573d6ef5018b46b6a4e1f31ca085a710.html")
-房屋租赁解释 = LegalSource(title="最高人民法院关于审理城镇房屋租赁合同纠纷案件具体应用法律若干问题的解释", provision="第二条、第三条", url="https://gongbao.court.gov.cn/Details/1ba2a85c913753569685966e8ee1e6.html")
-国家条例 = LegalSource(title="住房租赁条例", provision="现行行政法规", url="https://xzfg.moj.gov.cn/mobile/law/detail?LawID=1774&Query=")
+SHANGHAI条例 = LegalSource(title="上海市住房租赁条例", provision="第十五条、第十六条", url="https://fgj.sh.gov.cn/gzdt/20221202/f72b607956b34fc4878d55b5a6a9d064.html", effective_from="2023-02-01", jurisdiction="上海市")
+民法典维修 = LegalSource(title="中华人民共和国民法典", provision="租赁合同及格式条款相关规定", url="https://gdca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_573d6ef5018b46b6a4e1f31ca085a710.html", effective_from="2021-01-01")
+房屋租赁解释 = LegalSource(title="最高人民法院关于审理城镇房屋租赁合同纠纷案件具体应用法律若干问题的解释", provision="第二条、第三条", url="https://gongbao.court.gov.cn/Details/1ba2a85c913753569685966e8ee1e6.html", effective_from="2009-09-01")
+国家条例 = LegalSource(title="住房租赁条例", provision="现行行政法规", url="https://xzfg.moj.gov.cn/mobile/law/detail?LawID=1774&Query=", effective_from="2025-09-15")
 
 
 class RentalContractReviewSkill:
@@ -97,6 +100,10 @@ class RentalContractReviewSkill:
             ("all_repairs_tenant", r"(任何|全部|所有).{0,8}维修.{0,12}(承租人|乙方).{0,6}(承担|负责)|维修.{0,10}(全部|一律).{0,8}(承租人|乙方)", "对承租人明显不利", "条款可能不区分自然损耗、出租人维修义务与承租人过错，扩大了承租人责任。", "明确房屋主体和自然损耗由出租人维修，承租人仅承担因自身过错造成的损坏。", [民法典维修]),
             ("unannounced_entry", r"(出租人|甲方).{0,12}(随时|无需通知).{0,8}(进入|检查).{0,8}(房屋|房间)", "对承租人明显不利", "条款允许出租方无通知进入承租空间，可能严重影响承租人的正常占有使用。", "约定除紧急情况外应提前合理通知并取得承租人配合。", [国家条例]),
             ("deposit_forfeit", r"押金.{0,12}(概不退还|一律不退|不予退还)", "疑似无效或可能不成为合同内容", "押金无条件不退可能构成明显加重承租人责任的格式条款，仍需结合提示说明义务和违约事实判断。", "把押金扣除限定为有证据的欠费、损坏或约定违约，并明确结算与返还期限。", [国家条例]),
+            ("excessive_penalty", r"违约金.{0,10}(三倍|四倍|五倍|[3-9]个月|三个月|四个月|五个月).{0,6}(租金|房租)", "对承租人明显不利", "约定的违约金可能明显高于可预见损失，存在请求调整的风险。", "将违约金与实际损失、剩余租期和重新出租成本合理关联。", [民法典维修]),
+            ("ban_early_termination", r"(任何情况|无论何种原因).{0,10}(不得|不允许).{0,6}(提前解除|退租)", "对承租人明显不利", "绝对排除提前解除可能忽略法定解除事由并显著限制承租人权利。", "保留法定解除权，并明确一般提前退租的通知期限与合理责任。", [民法典维修]),
+            ("unlimited_fee_change", r"(出租人|甲方).{0,12}(有权|可以).{0,8}(随时|单方).{0,8}(提高|调整).{0,6}(租金|费用)", "疑似无效或可能不成为合同内容", "出租方可单方任意调价的约定缺少明确标准，可能构成不合理格式条款。", "约定固定租金或客观、明确且双方可核验的调价机制。", [民法典维修, 国家条例]),
+            ("forced_sublease_liability", r"转租.{0,10}(一切|全部).{0,8}(责任|费用).{0,8}(承租人|乙方)", "对承租人明显不利", "转租责任约定过于笼统，可能把非承租人原因造成的责任一并转嫁。", "明确是否允许转租、同意程序及责任边界。", [民法典维修]),
         ]
         for rule_id, pattern, level, explanation, suggestion, sources in rules:
             for match in list(re.finditer(pattern, text, re.S))[:3]:
