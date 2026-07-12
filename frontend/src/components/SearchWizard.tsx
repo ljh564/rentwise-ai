@@ -11,6 +11,7 @@ export function SearchWizard({ onSubmit, loading, lang }: {
   lang: 'zh' | 'en';
 }) {
   const [step, setStep] = useState(0);
+  const [customPreference, setCustomPreference] = useState('');
   const [form, setForm] = useState<Preferences>({
     city: '上海', districts: [], monthly_rent_max: 6000, monthly_total_max: 6800,
     bedrooms_min: 1, area_min: 30, rental_type: 'entire', move_in_date: '2026-08-01',
@@ -23,6 +24,12 @@ export function SearchWizard({ onSubmit, loading, lang }: {
   const updateDestination = (index: number, value: Partial<Preferences['destinations'][number]>) => patch({ destinations: form.destinations.map((destination, current) => current === index ? { ...destination, ...value } : destination) });
   const addDestination = () => form.destinations.length < 4 && patch({ destinations: [...form.destinations, { label: `家庭成员${form.destinations.length + 1}`, address: '', weight: 0.5, max_minutes: 45 }] });
   const removeDestination = (index: number) => form.destinations.length > 1 && patch({ destinations: form.destinations.filter((_, current) => current !== index) });
+  const addCustomPreference = () => {
+    const preference = customPreference.trim();
+    if (!preference) return;
+    patch({ soft_preferences: form.soft_preferences.includes(preference) ? form.soft_preferences : [...form.soft_preferences, preference] });
+    setCustomPreference('');
+  };
   const cn = lang === 'zh';
   const titles = cn
     ? ['先画出你的租房边界', '把每天的路算进去', '告诉我们什么叫“住得好”']
@@ -77,6 +84,8 @@ export function SearchWizard({ onSubmit, loading, lang }: {
 
       {step === 2 && <div>
         <div className="chips preference">{soft.map(item => <button type="button" key={item} className={form.soft_preferences.includes(item) ? 'selected' : ''} onClick={() => patch({ soft_preferences: form.soft_preferences.includes(item) ? form.soft_preferences.filter(value => value !== item) : [...form.soft_preferences, item] })}>{item}</button>)}</div>
+        <div className="custom-preference"><label>{cn ? '其它偏好' : 'Other preference'}<input maxLength={30} placeholder={cn ? '例如：可做饭、靠近公园、隔音好' : 'e.g. cooking allowed, near a park'} value={customPreference} onChange={event => setCustomPreference(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomPreference(); } }}/></label><button type="button" className="secondary" onClick={addCustomPreference}>{cn ? '加入偏好' : 'Add preference'}</button></div>
+        {form.soft_preferences.filter(item => !soft.includes(item)).length > 0 && <div className="custom-preference-list">{form.soft_preferences.filter(item => !soft.includes(item)).map(item => <span key={item}>{item}<button type="button" aria-label={`${cn ? '删除' : 'Remove'} ${item}`} onClick={() => patch({ soft_preferences: form.soft_preferences.filter(value => value !== item) })}>×</button></span>)}</div>}
         <div className="toggles">
           <label><input type="checkbox" checked={form.needs_elevator} onChange={e => patch({ needs_elevator: e.target.checked })} />{cn ? '必须有电梯' : 'Elevator required'}</label>
           <label><input type="checkbox" checked={form.allows_pets} onChange={e => patch({ allows_pets: e.target.checked })} />{cn ? '需要允许养宠' : 'Pets required'}</label>
