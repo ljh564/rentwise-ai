@@ -95,5 +95,3 @@ cd frontend && npm run build
 - [完整数据流与 Agent 状态图](docs/data-flow.md)
 - [部署与运维](docs/deployment.md)
 - [Agent 评估报告](docs/agent-evaluation.md)
-- [面试讲解稿](docs/interview-guide.md)
-- [简历项目描述](docs/resume-description.md)
