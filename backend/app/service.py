@@ -49,5 +49,5 @@ class RentalDecisionService:
             tradeoffs = failures or (["首月现金支出较高"] if first_month > monthly * 2.2 else ["暂无明显硬性冲突，仍需线下核验"])
             output.append(ListingRecommendation(listing=listing, monthly_true_cost=monthly, first_month_cash=first_month, weighted_commute_minutes=round(weighted, 1), commutes=commutes, hard_constraints_passed=not failures, score=score, reasons=reasons, tradeoffs=tradeoffs))
         output.sort(key=lambda item: (item.hard_constraints_passed, item.score), reverse=True)
-        return SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", total_candidates=len(candidates), recommendations=output, assumptions=["当前使用模拟上海房源与确定性通勤数据", "水电燃气统一按每月 ¥300 估算", "Agent判断不替代线下房源核验"])
-
+        commute_assumption = "通勤时间来自高德地图实时路线规划" if self.maps.name == "amap" else "通勤时间为开发测试用模拟数据"
+        return SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", total_candidates=len(candidates), recommendations=output, assumptions=["当前房源为模拟上海房源", commute_assumption, "水电燃气统一按每月 ¥300 估算", "Agent判断不替代线下房源核验"])
