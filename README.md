@@ -1,65 +1,78 @@
 # RentWise AI
 
-面向中国用户的租房决策 Agent。当前纵向切片通过结构化向导收集需求，使用模拟上海房源与确定性通勤数据，完成硬条件过滤、真实月成本计算、软偏好排序、推荐解释和原平台联系跳转。
+面向中国用户的智能租房决策 Agent。系统不是房源发布平台，而是在候选房源之上完成需求过滤、真实通勤、居住成本、多成员公平性和可解释排序。
 
-> 当前模拟结果仅用于开发和评估，不是真实在租房源。后续通过相同 Provider 接口接入 RentCast、Google Maps 与高德地图。
+> 当前房源来自模拟上海数据，不代表真实在租状态；通勤数据来自高德地图 Web 服务 API。
+
+## 已实现
+
+- 多步骤租房需求向导和中英文界面
+- 最多四个家庭通勤目的地、权重与独立时间上限
+- 高德公交、驾车、步行和骑行真实路线
+- Redis 地理编码/路线缓存和共享 3 QPS 限速
+- 真实月成本、首月支出、最差通勤、每周总通勤和公平性计算
+- 确定性 LangGraph 决策状态图
+- 匿名身份、偏好自动保存与恢复
+- 收藏房源快照、搜索历史和推荐反馈
+- PostgreSQL 持久化与 Agent 运行轨迹
+- Docker Compose 一键运行
 
 ## 快速启动
 
+复制环境变量并填入高德 Web 服务 Key：
+
 ```bash
-docker compose up --build
+cp .env.example .env
+```
+
+```env
+MAP_PROVIDER=amap
+AMAP_API_KEY=your_web_service_key
+```
+
+启动：
+
+```bash
+docker compose up -d --build
 ```
 
 - Web: http://localhost:5173
 - API: http://localhost:8000/docs
 - Health: http://localhost:8000/api/health
 
-本地开发：
-
-```bash
-cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-
-cd ../frontend
-npm install
-npm run dev
-```
-
-## 当前业务链路
+## 运行链路
 
 ```mermaid
 flowchart LR
-    Wizard[结构化需求向导] --> Provider[ListingProvider]
-    Provider --> Filter[硬约束过滤]
-    Filter --> Map[MapProvider 多目的地通勤]
-    Map --> Cost[真实成本计算]
-    Cost --> Rank[偏好排序]
-    Rank --> Explain[推荐与取舍解释]
-    Explain --> Contact[跳转原平台]
+    UI[React 需求向导] --> Identity[匿名身份]
+    Identity --> API[FastAPI]
+    API --> Graph[LangGraph]
+    Graph --> Listings[ListingProvider]
+    Graph --> Maps[AMapProvider]
+    Maps --> Redis[(Redis 缓存与限流)]
+    Graph --> Rank[成本/约束/通勤/偏好排序]
+    Rank --> DB[(PostgreSQL)]
+    DB --> UI
 ```
-
-## Provider 边界
-
-- `MockShanghaiListingProvider`：开发阶段上海模拟房源。
-- `MockMapProvider`：基于稳定输入生成确定性通勤，便于测试。
-- `RentCastProvider`：待API Key到位后接入美国实时出租房源。
-- `GoogleMapsProvider` / `AMapProvider`：分别用于真实验证与中国场景。
 
 ## 测试
 
 ```bash
-cd backend
-pytest -q
-
-cd frontend
-npm run build
+docker compose exec backend pytest -q
+cd frontend && npm run build
 ```
 
-## 开发路线
+## 文档
 
-1. 当前：需求向导、搜索、成本、通勤、排序、解释、双语结果。
-2. 下一阶段：PostgreSQL匿名档案、收藏、多目的地编辑、房源对比表。
-3. Agent阶段：LangGraph状态流、OpenAI兼容模型、图片与合同法律核验。
-4. 真实数据阶段：RentCast、Google Maps和高德Provider、缓存与额度保护。
-5. 交付阶段：端到端测试、Agent评估集、完整架构和面试材料。
+- [系统架构](docs/architecture.md)
+- [API 与匿名身份](docs/api.md)
+- [评分规则](docs/scoring.md)
+- [开发阶段与 LLM 接入边界](docs/development-plan.md)
+
+## 当前边界
+
+- 房源仍是模拟快照，原平台链接仅用于演示。
+- 推荐解释由规则模板生成，还没有使用 LLM。
+- 自定义开放偏好只有与结构化标签精确匹配时才参与加分。
+- 合同法律核验和图片分析尚未开始。
+- 本系统提供决策辅助，不替代房源线下核验、律师意见或司法认定。
