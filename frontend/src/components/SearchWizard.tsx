@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, BriefcaseBusiness, CircleAlert, House, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { Preferences } from '../types';
 
-const districts = ['浦东新区', '静安区', '徐汇区', '杨浦区', '闵行区', '宝山区'];
+const districtOptions: Record<string, string[]> = {
+  '上海': ['浦东新区', '静安区', '徐汇区', '杨浦区', '闵行区', '宝山区'],
+  'shanghai': ['浦东新区', '静安区', '徐汇区', '杨浦区', '闵行区', '宝山区'],
+  'austin, tx': ['Downtown', 'East Austin', 'South Congress', 'North Austin', 'Mueller', 'The Domain'],
+};
+
+const districtsForCity = (city: string) => districtOptions[city.trim().toLowerCase()] || [];
 const soft = ['近地铁', '采光好', '安静', '商业便利', '适合家庭', '性价比'];
 export const defaultPreferences: Preferences = {
   city: '上海', districts: [], monthly_rent_max: 6000, monthly_total_max: 6800,
@@ -24,6 +30,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
   const [form, setForm] = useState<Preferences>(initialPreferences || defaultPreferences);
   useEffect(() => { onPreferencesChange?.(form); }, [form, onPreferencesChange]);
   const patch = (value: Partial<Preferences>) => setForm({ ...form, ...value });
+  const updateCity = (city: string) => setForm(current => ({ ...current, city, districts: [] }));
   const updateDestination = (index: number, value: Partial<Preferences['destinations'][number]>) => patch({ destinations: form.destinations.map((destination, current) => current === index ? { ...destination, ...value } : destination) });
   const addDestination = () => form.destinations.length < 4 && patch({ destinations: [...form.destinations, { label: `家庭成员${form.destinations.length + 1}`, address: '', weight: 0.5, max_minutes: 45 }] });
   const removeDestination = (index: number) => form.destinations.length > 1 && patch({ destinations: form.destinations.filter((_, current) => current !== index) });
@@ -39,6 +46,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
     : ['Set your rental boundaries', 'Count every commute', 'Define what feels like home'];
   const missingNumber = [form.monthly_rent_max, form.monthly_total_max, form.bedrooms_min, form.area_min].some(Number.isNaN);
   const invalidDestinations = form.destinations.some(destination => !destination.label.trim() || !destination.address.trim() || destination.weight <= 0 || destination.max_minutes < 5);
+  const districts = districtsForCity(form.city);
 
   const numericValue = (value: number) => Number.isNaN(value) ? '' : value;
   const numericChange = (value: string) => value === '' ? Number.NaN : Number(value);
@@ -57,7 +65,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
       <h1 id="wizard-title">{titles[step]}</h1>
 
       {step === 0 && <div className="field-grid">
-        <label>{cn ? '目标城市' : 'City'}<input value={form.city} onChange={e => patch({ city: e.target.value })} /></label>
+        <label>{cn ? '目标城市' : 'City'}<input value={form.city} onChange={e => updateCity(e.target.value)} /></label>
         <label>{cn ? '入住日期' : 'Move-in'}<input type="date" value={form.move_in_date} onChange={e => patch({ move_in_date: e.target.value })} /></label>
         <label>{cn ? '挂牌租金上限' : 'Listed rent cap'}<div className="money"><span>¥</span><input type="number" min="1000" required value={numericValue(form.monthly_rent_max)} onChange={e => patch({ monthly_rent_max: numericChange(e.target.value) })} /></div></label>
         <label>
@@ -75,7 +83,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
         <label>{cn ? '最少卧室' : 'Bedrooms'}<input type="number" min="1" required value={numericValue(form.bedrooms_min)} onChange={e => patch({ bedrooms_min: numericChange(e.target.value) })} /></label>
         <label>{cn ? '最小面积 m²' : 'Min area m²'}<input type="number" min="5" required value={numericValue(form.area_min)} onChange={e => patch({ area_min: numericChange(e.target.value) })} /></label>
         <fieldset className="wide"><legend>{cn ? '目标区域（可多选）' : 'Districts'}</legend><div className="chips">
-          {districts.map(district => <button type="button" key={district} className={form.districts.includes(district) ? 'selected' : ''} onClick={() => patch({ districts: form.districts.includes(district) ? form.districts.filter(item => item !== district) : [...form.districts, district] })}>{district}</button>)}
+          {districts.length ? districts.map(district => <button type="button" key={district} className={form.districts.includes(district) ? 'selected' : ''} onClick={() => patch({ districts: form.districts.includes(district) ? form.districts.filter(item => item !== district) : [...form.districts, district] })}>{district}</button>) : <small>{cn ? '当前城市暂无预设区域，可先按整座城市搜索。' : 'No preset areas for this city; search the whole city.'}</small>}
         </div></fieldset>
       </div>}
 
