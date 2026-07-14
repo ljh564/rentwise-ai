@@ -12,7 +12,9 @@ from app.models import Listing, RentalPreferences, SearchResponse
 from app.llm import OpenAICompatibleLLM
 from app.persistence import AgentRun, ContractReview, Favorite, RecommendationFeedback, RentalProfile, SearchHistory, SessionLocal, authenticate_anonymous, create_anonymous_session
 from app.providers.amap import AMapError, AMapProvider
+from app.providers.google_maps import GoogleMapsError, GoogleMapsProvider
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
+from app.providers.rentcast import RentCastError, RentCastProvider
 from app.service import RentalDecisionService
 from app.skills.contract import ContractReviewReport, RentalContractReviewSkill
 from app.skills.listing_image import ListingImageAnalysisSkill, ListingImageReport
@@ -24,14 +26,18 @@ load_dotenv()
 app = FastAPI(title="RentScout AI API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","), allow_credentials=True, allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "X-Anonymous-User-ID", "X-Anonymous-Access-Token"])
 mock_map = MockMapProvider()
-map_provider = AMapProvider(
-    os.environ["AMAP_API_KEY"],
-    base_url=os.getenv("AMAP_BASE_URL"),
-        qps=float(os.getenv("AMAP_QPS", "3")),
-        redis_url=os.getenv("REDIS_URL"),
-) if os.getenv("MAP_PROVIDER") == "amap" else mock_map
+map_choice = os.getenv("MAP_PROVIDER", "mock").lower()
+if map_choice == "amap":
+    map_provider = AMapProvider(os.environ["AMAP_API_KEY"], base_url=os.getenv("AMAP_BASE_URL"), qps=float(os.getenv("AMAP_QPS", "3")), redis_url=os.getenv("REDIS_URL"))
+elif map_choice == "google":
+    map_provider = GoogleMapsProvider(os.environ["GOOGLE_MAPS_API_KEY"], redis_url=os.getenv("REDIS_URL"), qps=float(os.getenv("GOOGLE_MAPS_QPS", "3")))
+else:
+    map_provider = mock_map
+
+listing_choice = os.getenv("LISTING_PROVIDER", "mock").lower()
+listing_provider = RentCastProvider(os.environ["RENTCAST_API_KEY"], redis_url=os.getenv("REDIS_URL"), monthly_limit=int(os.getenv("RENTCAST_MONTHLY_LIMIT", "50"))) if listing_choice == "rentcast" else MockShanghaiListingProvider()
 llm = OpenAICompatibleLLM(os.getenv("LLM_BASE_URL", ""), os.getenv("LLM_API_KEY", ""), os.getenv("LLM_MODEL", ""), float(os.getenv("LLM_TEMPERATURE", "0")), os.getenv("LLM_VISION_MODEL", ""))
-service = RentalDecisionService(MockShanghaiListingProvider(), map_provider, llm)
+service = RentalDecisionService(listing_provider, map_provider, llm)
 contract_skill = RentalContractReviewSkill(llm)
 listing_image_skill = ListingImageAnalysisSkill(llm)
 artifact_storage = OptionalArtifactStorage()
@@ -277,7 +283,7 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
             await db.commit()
             response.agent_run_id = str(run.id)
         return response
-    except AMapError as exc:
+    except (AMapError, GoogleMapsError, RentCastError) as exc:
         async with SessionLocal() as db:
             stored_run = await db.get(AgentRun, run.id)
             stored_run.status = "failed"

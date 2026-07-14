@@ -43,6 +43,13 @@ docker compose up -d --build
 - API: http://localhost:8000/docs
 - Health: http://localhost:8000/api/health
 
+### Real provider modes
+
+- China demo: `LISTING_PROVIDER=mock`, `MAP_PROVIDER=amap`.
+- US real-data verification: `LISTING_PROVIDER=rentcast`, `MAP_PROVIDER=google`, and a city such as `Austin, TX`.
+- RentCast is protected by a Redis-backed monthly hard limit (`RENTCAST_MONTHLY_LIMIT`, capped at 50) and a 30-day query cache. Automated tests never call paid APIs.
+- Google Routes responses are cached for 24 hours and requests are limited to 3 QPS by default.
+
 ## 运行链路
 
 ```mermaid
