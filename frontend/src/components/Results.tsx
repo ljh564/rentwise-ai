@@ -1,5 +1,4 @@
 import {
-  CheckCircle2,
   ExternalLink,
   Heart,
   MapPin,
@@ -55,31 +54,6 @@ export function Results({
           {cn ? "调整需求" : "Edit brief"}
         </button>
       </div>
-      {(data.llm_preferences_parsed || data.llm_explanations_generated) && (
-        <section className="ai-process-summary" aria-label={cn ? "AI 处理记录" : "AI processing record"}>
-          <p>{cn ? "AI 处理记录" : "AI processing record"}</p>
-          <div>
-            {data.llm_preferences_parsed && (
-              <span className="ai-process-item">
-                <CheckCircle2 aria-hidden="true" />
-                <span>
-                  <strong>{cn ? "偏好解析已完成" : "Preferences parsed"}</strong>
-                  <small>{cn ? "尝试将自定义偏好映射为可验证的房源标签，未匹配项不参与评分。" : "Custom preferences were mapped to verifiable listing tags; unmatched items were not scored."}</small>
-                </span>
-              </span>
-            )}
-            {data.llm_explanations_generated && (
-              <span className="ai-process-item">
-                <CheckCircle2 aria-hidden="true" />
-                <span>
-                  <strong>{cn ? "推荐解释已生成" : "Recommendation explanations generated"}</strong>
-                  <small>{cn ? "AI 只根据成本、通勤和约束结果组织推荐理由，不修改评分。" : "AI organized the reasons from cost, commute and constraints without changing scores."}</small>
-                </span>
-              </span>
-            )}
-          </div>
-        </section>
-      )}
       <div className="assumption-rail">
         {data.assumptions.map((x) => (
           <span key={x}>{x}</span>
