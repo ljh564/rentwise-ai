@@ -8,3 +8,4 @@ dist/
 playwright-report/
 test-results/
 backend/evals/output/
+output/pdf/
