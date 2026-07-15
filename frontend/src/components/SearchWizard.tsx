@@ -54,12 +54,13 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
     ? ['先画出你的租房边界', '把每天的路算进去', '告诉我们什么叫“住得好”']
     : ['Set your rental boundaries', 'Count every commute', 'Define what feels like home'];
   const missingNumber = [form.monthly_rent_max, form.monthly_total_max, form.bedrooms_min, form.area_min].some(Number.isNaN);
-  const invalidDestinations = form.destinations.some(destination => !destination.label.trim() || !destination.address.trim() || destination.weight <= 0 || destination.max_minutes < 5);
+  const invalidDestinations = form.destinations.some(destination => !destination.label.trim() || !destination.address.trim() || Number.isNaN(destination.weight) || Number.isNaN(destination.max_minutes) || destination.weight <= 0 || destination.max_minutes < 5);
   const geographyError = geographyConsistencyError(form);
   const districts = districtsForCity(form.city);
 
   const numericValue = (value: number) => Number.isNaN(value) ? '' : value;
   const numericChange = (value: string) => value === '' ? Number.NaN : Number(value);
+  const normalizedNumber = (value: number, fallback: number, min: number, max: number) => Number.isNaN(value) ? fallback : Math.min(max, Math.max(min, value));
 
   return <section className="wizard" aria-labelledby="wizard-title">
     <div className="step-rail">
@@ -77,7 +78,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
       {step === 0 && <div className="field-grid">
         <label>{cn ? '目标城市' : 'City'}<input value={form.city} onChange={e => updateCity(e.target.value)} /></label>
         <label>{cn ? '入住日期' : 'Move-in'}<input type="date" value={form.move_in_date} onChange={e => patch({ move_in_date: e.target.value })} /></label>
-        <label>{cn ? '挂牌租金上限' : 'Listed rent cap'}<div className="money"><span>¥</span><input type="number" min="1000" required value={numericValue(form.monthly_rent_max)} onChange={e => patch({ monthly_rent_max: numericChange(e.target.value) })} /></div></label>
+        <label>{cn ? '挂牌租金上限' : 'Listed rent cap'}<div className="money"><span>¥</span><input type="number" min="1000" required value={numericValue(form.monthly_rent_max)} onChange={e => patch({ monthly_rent_max: numericChange(e.target.value) })} onBlur={() => patch({ monthly_rent_max: normalizedNumber(form.monthly_rent_max, defaultPreferences.monthly_rent_max, 1000, 100000) })} /></div></label>
         <label>
           <span className="label-with-help">
             {cn ? '月均综合居住成本上限' : 'All-in monthly housing cap'}
@@ -88,10 +89,10 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
               </span>
             </span>
           </span>
-          <div className="money"><span>¥</span><input type="number" min="1000" required value={numericValue(form.monthly_total_max)} onChange={e => patch({ monthly_total_max: numericChange(e.target.value) })} /></div>
+          <div className="money"><span>¥</span><input type="number" min="1000" required value={numericValue(form.monthly_total_max)} onChange={e => patch({ monthly_total_max: numericChange(e.target.value) })} onBlur={() => patch({ monthly_total_max: normalizedNumber(form.monthly_total_max, defaultPreferences.monthly_total_max, 1000, 120000) })} /></div>
         </label>
-        <label>{cn ? '最少卧室' : 'Bedrooms'}<input type="number" min="1" required value={numericValue(form.bedrooms_min)} onChange={e => patch({ bedrooms_min: numericChange(e.target.value) })} /></label>
-        <label>{cn ? '最小面积 m²' : 'Min area m²'}<input type="number" min="5" required value={numericValue(form.area_min)} onChange={e => patch({ area_min: numericChange(e.target.value) })} /></label>
+        <label>{cn ? '最少卧室' : 'Bedrooms'}<input type="number" min="1" required value={numericValue(form.bedrooms_min)} onChange={e => patch({ bedrooms_min: numericChange(e.target.value) })} onBlur={() => patch({ bedrooms_min: normalizedNumber(form.bedrooms_min, defaultPreferences.bedrooms_min, 1, 8) })} /></label>
+        <label>{cn ? '最小面积 m²' : 'Min area m²'}<input type="number" min="5" required value={numericValue(form.area_min)} onChange={e => patch({ area_min: numericChange(e.target.value) })} onBlur={() => patch({ area_min: normalizedNumber(form.area_min, defaultPreferences.area_min, 5, 500) })} /></label>
         <fieldset className="wide"><legend>{cn ? '目标区域（可多选）' : 'Districts'}</legend><div className="chips">
           {districts.length ? districts.map(district => <button type="button" key={district} className={form.districts.includes(district) ? 'selected' : ''} onClick={() => patch({ districts: form.districts.includes(district) ? form.districts.filter(item => item !== district) : [...form.districts, district] })}>{district}</button>) : <small>{cn ? '当前城市暂无预设区域，可先按整座城市搜索。' : 'No preset areas for this city; search the whole city.'}</small>}
         </div></fieldset>
@@ -99,7 +100,7 @@ export function SearchWizard({ onSubmit, loading, lang, initialPreferences, onPr
 
       {step === 1 && <div className="commute-editor">
         <div className="commute-toolbar"><label>{cn ? '交通方式' : 'Mode'}<select value={form.commute_mode} onChange={e => patch({ commute_mode: e.target.value as Preferences['commute_mode'] })}><option value="transit">{cn ? '公共交通' : 'Transit'}</option><option value="driving">{cn ? '驾车' : 'Driving'}</option><option value="walking">{cn ? '步行' : 'Walking'}</option><option value="bicycling">{cn ? '骑行' : 'Cycling'}</option></select></label><button type="button" className="secondary" disabled={form.destinations.length >= 4} onClick={addDestination}><Plus/>{cn ? '添加目的地' : 'Add destination'}</button></div>
-        <div className="destination-list">{form.destinations.map((destination, index) => <fieldset className="destination-card" key={index}><legend>{cn ? `目的地 ${index + 1}` : `Destination ${index + 1}`}</legend><div className="field-grid"><label>{cn ? '家庭成员 / 标签' : 'Person / label'}<input value={destination.label} onChange={e => updateDestination(index, { label: e.target.value })}/></label><label>{cn ? '地点地址' : 'Address'}<input value={destination.address} onChange={e => updateDestination(index, { address: e.target.value })}/></label><label>{cn ? '重要权重' : 'Weight'}<input type="number" min="0.05" max="1" step="0.05" value={destination.weight} onChange={e => updateDestination(index, { weight: Number(e.target.value) })}/></label><label>{cn ? '单程上限（分钟）' : 'Max one-way minutes'}<input type="number" min="5" max="180" value={destination.max_minutes} onChange={e => updateDestination(index, { max_minutes: Number(e.target.value) })}/></label></div>{form.destinations.length > 1 && <button type="button" className="remove-destination" onClick={() => removeDestination(index)}><Trash2/>{cn ? '移除' : 'Remove'}</button>}</fieldset>)}</div>
+        <div className="destination-list">{form.destinations.map((destination, index) => <fieldset className="destination-card" key={index}><legend>{cn ? `目的地 ${index + 1}` : `Destination ${index + 1}`}</legend><div className="field-grid"><label>{cn ? '家庭成员 / 标签' : 'Person / label'}<input value={destination.label} onChange={e => updateDestination(index, { label: e.target.value })}/></label><label>{cn ? '地点地址' : 'Address'}<input value={destination.address} onChange={e => updateDestination(index, { address: e.target.value })}/></label><label>{cn ? '重要权重' : 'Weight'}<input type="number" min="0.05" max="1" step="0.05" value={numericValue(destination.weight)} onChange={e => updateDestination(index, { weight: numericChange(e.target.value) })} onBlur={() => updateDestination(index, { weight: normalizedNumber(destination.weight, 1, 0.05, 1) })}/></label><label>{cn ? '单程上限（分钟）' : 'Max one-way minutes'}<input type="number" min="5" max="180" value={numericValue(destination.max_minutes)} onChange={e => updateDestination(index, { max_minutes: numericChange(e.target.value) })} onBlur={() => updateDestination(index, { max_minutes: normalizedNumber(destination.max_minutes, 45, 5, 180) })}/></label></div>{form.destinations.length > 1 && <button type="button" className="remove-destination" onClick={() => removeDestination(index)}><Trash2/>{cn ? '移除' : 'Remove'}</button>}</fieldset>)}</div>
         <p className="commute-note">{cn ? '权重用于计算家庭加权通勤；系统还会单独检查每位成员的上限、最差通勤、每周总通勤和公平性。' : 'Weights drive the household average; we also check each limit, worst commute, weekly total and fairness.'}</p>
       </div>}
 

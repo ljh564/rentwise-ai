@@ -11,3 +11,23 @@ test('restores anonymous memory and opens a historical decision', async ({ page 
 test('opens contract review and switches language', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: '合同核验' }).click(); await expect(page.getByText('拍下每一页，也能核验合同')).toBeVisible(); await page.getByRole('button', { name: 'EN' }).click(); await expect(page.getByText('Photograph every page. Review the contract.')).toBeVisible();
 });
+
+test('allows every numeric field to be cleared before entering a replacement', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
+  for (const [label, replacement] of [['Listed rent cap', '5000'], ['All-in monthly housing cap', '5600'], ['Bedrooms', '2'], ['Min area m²', '45']] as const) {
+    const input = page.locator('label').filter({ hasText: label }).locator('input[type="number"]');
+    await input.fill('');
+    await expect(input).toHaveValue('');
+    await input.fill(replacement);
+    await expect(input).toHaveValue(replacement);
+  }
+  await page.getByRole('button', { name: 'Continue' }).click();
+  for (const [label, replacement] of [['Weight', '0.7'], ['Max one-way minutes', '60']] as const) {
+    const input = page.locator('label').filter({ hasText: label }).locator('input[type="number"]');
+    await input.fill('');
+    await expect(input).toHaveValue('');
+    await input.fill(replacement);
+    await expect(input).toHaveValue(replacement);
+  }
+});
