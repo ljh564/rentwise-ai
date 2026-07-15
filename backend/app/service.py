@@ -178,7 +178,11 @@ class RentalDecisionService:
             "google-maps": "通勤时间来自 Google 地图真实路线规划",
         }
         commute_assumption = commute_assumptions.get(self.maps.name, "通勤时间为开发测试用模拟数据")
-        listing_assumption = "房源来自 RentCast 真实数据接口" if self.listings.name == "rentcast" else "当前房源为模拟上海房源"
+        listing_assumptions = {
+            "rentcast": "房源来自 RentCast 真实数据接口",
+            "repliers-preview": "房源来自 Repliers Preview 美国 MLS 样例数据，包含对应样例照片，不代表实时在租状态",
+        }
+        listing_assumption = listing_assumptions.get(self.listings.name, "当前房源为模拟上海房源")
         assumptions = [listing_assumption, commute_assumption, "水电燃气统一按每月 ¥300 估算", "Agent判断不替代线下房源核验"]
         if state.get("unverified_preferences"): assumptions.append("部分自定义偏好缺少房源证据，未计入评分：" + "、".join(state["unverified_preferences"]))
         response = SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", llm_enhanced=state.get("llm_enhanced", False), llm_preferences_parsed=state.get("llm_preferences_parsed", False), llm_explanations_generated=state.get("llm_explanations_generated", False), llm_tokens=state.get("llm_tokens", 0), total_candidates=len(state["candidates"]), recommendations=[ListingRecommendation.model_validate(item) for item in state["recommendations"]], assumptions=assumptions)

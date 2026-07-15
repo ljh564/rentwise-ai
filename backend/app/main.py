@@ -16,6 +16,7 @@ from app.providers.amap import AMapError, AMapProvider
 from app.providers.google_maps import GoogleMapsError, GoogleMapsProvider
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
 from app.providers.rentcast import RentCastError, RentCastProvider
+from app.providers.repliers import RepliersError, RepliersProvider
 from app.service import RentalDecisionService
 from app.skills.contract import ContractReviewReport, RentalContractReviewSkill
 from app.skills.listing_image import ListingImageAnalysisSkill, ListingImageReport
@@ -39,7 +40,12 @@ else:
     map_provider = mock_map
 
 listing_choice = os.getenv("LISTING_PROVIDER", "mock").lower()
-listing_provider = RentCastProvider(os.environ["RENTCAST_API_KEY"], redis_url=os.getenv("REDIS_URL"), monthly_limit=int(os.getenv("RENTCAST_MONTHLY_LIMIT", "50"))) if listing_choice == "rentcast" else MockShanghaiListingProvider()
+if listing_choice == "rentcast":
+    listing_provider = RentCastProvider(os.environ["RENTCAST_API_KEY"], redis_url=os.getenv("REDIS_URL"), monthly_limit=int(os.getenv("RENTCAST_MONTHLY_LIMIT", "50")))
+elif listing_choice == "repliers":
+    listing_provider = RepliersProvider(os.environ["REPLIERS_API_KEY"], redis_url=os.getenv("REDIS_URL"))
+else:
+    listing_provider = MockShanghaiListingProvider()
 llm = OpenAICompatibleLLM(os.getenv("LLM_BASE_URL", ""), os.getenv("LLM_API_KEY", ""), os.getenv("LLM_MODEL", ""), float(os.getenv("LLM_TEMPERATURE", "0")), os.getenv("LLM_VISION_MODEL", ""))
 service = RentalDecisionService(listing_provider, map_provider, llm)
 contract_skill = RentalContractReviewSkill(llm)
@@ -289,7 +295,7 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
             await db.commit()
             response.agent_run_id = str(run.id)
         return response
-    except (AMapError, GoogleMapsError, RentCastError) as exc:
+    except (AMapError, GoogleMapsError, RentCastError, RepliersError) as exc:
         async with SessionLocal() as db:
             stored_run = await db.get(AgentRun, run.id)
             stored_run.status = "failed"
@@ -301,7 +307,7 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
                 detail = "高德地图暂时无法返回真实通勤数据，请稍后重试。"
             else:
                 error_code = "listing_provider_unavailable"
-                detail = "真实房源数据暂时不可用，请稍后重试。"
+                detail = "房源数据暂时不可用，请稍后重试。"
             stored_run.summary = {"error": error_code}
             stored_run.completed_at = datetime.now(timezone.utc)
             await db.commit()
