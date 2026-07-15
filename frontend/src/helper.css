@@ -1,5 +1,6 @@
 .label-with-help { display: inline-flex; align-items: center; gap: 7px; }
 .geography-error { flex: 1; margin: 0; padding: 11px 13px; border-left: 3px solid var(--warning); background: var(--surface-2); color: var(--warning); font-size: 12px; line-height: 1.6; }
+.image-note{position:absolute;left:12px;bottom:12px;padding:7px 9px;background:rgba(19,37,45,.82);color:#fff;font:11px var(--font-mono)}
 .cost-help { position: relative; display: inline-flex; }
 .cost-help button { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: help; display: grid; place-items: center; border-radius: 50%; }
 .cost-help button svg { width: 17px; height: 17px; }

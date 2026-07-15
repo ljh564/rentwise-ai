@@ -19,6 +19,18 @@ class RentCastQuotaExceeded(RentCastError):
     pass
 
 
+FALLBACK_HOME_IMAGES = (
+    "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1560185008-b033106af5c3?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=900&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1554995207-c18c203602cb?w=900&auto=format&fit=crop&q=80",
+)
+
+
 class RentCastProvider(ListingProvider):
     name = "rentcast"
 
@@ -111,7 +123,8 @@ class RentCastProvider(ListingProvider):
         address = str(item["formattedAddress"])
         property_type = str(item.get("propertyType") or "Rental")
         image = (item.get("images") or [None])[0] if isinstance(item.get("images"), list) else None
-        image_url = image or "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=900&auto=format&fit=crop&q=80"
+        fallback_index = int(hashlib.sha256(str(item["id"]).encode()).hexdigest(), 16) % len(FALLBACK_HOME_IMAGES)
+        image_url = image or FALLBACK_HOME_IMAGES[fallback_index]
         source_url = item.get("listingAgent", {}).get("website") or item.get("listingOffice", {}).get("website") or "https://app.rentcast.io"
         return Listing(
             id=f"RC-{item['id']}", title=f"{property_type} · {address}", district=str(item.get("state") or ""),
@@ -119,7 +132,8 @@ class RentCastProvider(ListingProvider):
             property_fee_monthly=round(float((item.get("hoa") or {}).get("fee") or 0)), bedrooms=bedrooms,
             area_sqm=max(5, round(square_feet / 10.7639)), floor=1, has_elevator=property_type in {"Apartment", "Condo"},
             allows_pets=False, rental_type="entire", latitude=float(item["latitude"]), longitude=float(item["longitude"]),
-            image_url=image_url, source_name="RentCast", source_url=source_url, tags=[property_type, "real-listing-data"],
+            image_url=image_url, source_name="RentCast", source_url=source_url,
+            tags=[property_type, "real-listing-data", *([] if image else ["illustrative-image"])],
         )
 
     async def search(self, preferences: RentalPreferences) -> list[Listing]:

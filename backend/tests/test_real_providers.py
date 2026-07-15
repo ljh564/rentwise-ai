@@ -22,6 +22,13 @@ async def test_rentcast_maps_response_and_caches(monkeypatch):
     assert calls == 1
     assert listings[0].monthly_rent == 2200
     assert listings[0].area_sqm == 74
+    assert "illustrative-image" in listings[0].tags
+
+
+def test_rentcast_uses_stable_varied_fallback_images():
+    base = {"formattedAddress":"1 Main St, Austin, TX","city":"Austin","state":"TX","latitude":30.2,"longitude":-97.7,"propertyType":"Apartment","bedrooms":2,"squareFootage":800,"price":2200}
+    images = {str(RentCastProvider._listing({**base, "id": f"home-{index}"}).image_url) for index in range(12)}
+    assert len(images) > 1
 
 
 @pytest.mark.asyncio

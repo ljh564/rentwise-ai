@@ -76,8 +76,11 @@ export function Results({
             className={`listing ${!r.hard_constraints_passed ? "dimmed" : ""}`}
           >
             <div className="image-wrap">
-              <img src={r.listing.image_url} alt="" />
+              <img src={r.listing.image_url} alt={cn ? `${r.listing.title}图片` : `${r.listing.title} image`} />
               <span className="rank">#{i + 1}</span>
+              {r.listing.tags.includes("illustrative-image") && (
+                <span className="image-note">{cn ? "示意图" : "Illustration"}</span>
+              )}
               <span className={r.hard_constraints_passed ? "pass" : "fail"}>
                 {r.hard_constraints_passed
                   ? cn
