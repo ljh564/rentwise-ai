@@ -97,8 +97,19 @@ class GoogleMapsProvider(MapProvider):
         if data is None:
             await self._rate_limit()
             headers = {"X-Goog-Api-Key": self.api_key, "X-Goog-FieldMask": "routes.duration,routes.distanceMeters", "Content-Type": "application/json"}
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=30) as client:
-                response = await client.post("/directions/v2:computeRoutes", json=body, headers=headers)
+            response = None
+            last_error = None
+            for attempt in range(2):
+                try:
+                    async with httpx.AsyncClient(base_url=self.base_url, timeout=30) as client:
+                        response = await client.post("/directions/v2:computeRoutes", json=body, headers=headers)
+                    break
+                except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                    last_error = exc
+                    if attempt == 0:
+                        await asyncio.sleep(0.5)
+            if response is None:
+                raise GoogleMapsError("Google Routes network request failed after retries") from last_error
             if response.status_code in {401, 403}:
                 raise GoogleMapsError("Google Routes API rejected the key or is not enabled")
             if response.status_code == 429:

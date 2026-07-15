@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +24,8 @@ from app.validation import validate_geography
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RentScout AI API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","), allow_credentials=True, allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "X-Anonymous-User-ID", "X-Anonymous-Access-Token"])
@@ -290,10 +293,20 @@ async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)
         async with SessionLocal() as db:
             stored_run = await db.get(AgentRun, run.id)
             stored_run.status = "failed"
-            stored_run.summary = {"error": "map_provider_unavailable"}
+            if isinstance(exc, GoogleMapsError):
+                error_code = "google_maps_unavailable"
+                detail = "Google 地图暂时无法返回真实通勤数据，请稍后重试。"
+            elif isinstance(exc, AMapError):
+                error_code = "amap_unavailable"
+                detail = "高德地图暂时无法返回真实通勤数据，请稍后重试。"
+            else:
+                error_code = "listing_provider_unavailable"
+                detail = "真实房源数据暂时不可用，请稍后重试。"
+            stored_run.summary = {"error": error_code}
             stored_run.completed_at = datetime.now(timezone.utc)
             await db.commit()
-        raise HTTPException(status_code=503, detail="高德地图暂时无法返回真实通勤数据，请稍后重试。") from exc
+        logger.warning("Search provider failed (%s): %s", error_code, exc)
+        raise HTTPException(status_code=503, detail=detail) from exc
 
 
 @app.post("/api/agent-runs/{run_id}/resume", response_model=SearchResponse)

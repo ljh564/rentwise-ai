@@ -2,6 +2,7 @@ import pytest
 
 from app.models import Destination, RentalPreferences
 from app.providers.mock import MockMapProvider, MockShanghaiListingProvider
+from app.providers.google_maps import GoogleMapsError
 from app.service import RentalDecisionService, true_cost
 from app.skills.commute import CommutePlanningSkill
 
@@ -88,3 +89,22 @@ def test_true_cost_amortizes_agent_fee():
     model = Listing(**listing, utilities_estimate=300, deposit_months=1, image_url="https://example.com/a.jpg", source_name="test", source_url="https://example.com")
     monthly, _ = true_cost(model, 12)
     assert monthly == 6800 + 260 + 300 + round(6800 / 12)
+
+
+class PartiallyUnavailableMapProvider(MockMapProvider):
+    name = "google-maps"
+
+    async def commute(self, listing, destination, mode):
+        if listing.id == "SH-PD-001":
+            raise GoogleMapsError("No transit route")
+        return await super().commute(listing, destination, mode)
+
+
+@pytest.mark.asyncio
+async def test_search_skips_listing_when_one_real_route_is_unavailable():
+    prefs = RentalPreferences(monthly_rent_max=6000, monthly_total_max=6500, move_in_date="2026-08-01", destinations=[Destination(label="公司", address="陆家嘴", weight=1, max_minutes=60)])
+    response = await RentalDecisionService(MockShanghaiListingProvider(), PartiallyUnavailableMapProvider()).search(prefs)
+    assert response.total_candidates == 6
+    assert len(response.recommendations) == 5
+    assert all(item.listing.id != "SH-PD-001" for item in response.recommendations)
+    assert any("Google 地图真实路线规划" in assumption for assumption in response.assumptions)

@@ -5,6 +5,8 @@ from langgraph.graph import END, START, StateGraph
 from app.llm import LLMError, OpenAICompatibleLLM
 from app.models import Listing, ListingRecommendation, RentalPreferences, SearchResponse
 from app.providers.base import ListingProvider, MapProvider
+from app.providers.amap import AMapError
+from app.providers.google_maps import GoogleMapsError
 from app.skills.commute import CommutePlanningSkill
 
 
@@ -105,9 +107,14 @@ class RentalDecisionService:
     async def _evaluate_and_rank(self, state: DecisionState) -> DecisionState:
         prefs = RentalPreferences.model_validate(state["preferences"])
         output = []
+        route_errors: list[Exception] = []
         for raw_listing in state["candidates"]:
             listing = Listing.model_validate(raw_listing)
-            commute_analysis = await self.commute_skill.calculate(listing, prefs)
+            try:
+                commute_analysis = await self.commute_skill.calculate(listing, prefs)
+            except (AMapError, GoogleMapsError) as exc:
+                route_errors.append(exc)
+                continue
             commutes = commute_analysis.commutes
             monthly, first_month = true_cost(listing, prefs.lease_months)
             failures = hard_constraints(listing, prefs, monthly)
@@ -130,6 +137,8 @@ class RentalDecisionService:
             if feedback_bonus: reasons.append(f"历史反馈调整 {feedback_bonus:+.0f} 分")
             tradeoffs = failures or (["首月现金支出较高"] if first_month > monthly * 2.2 else ["暂无明显硬性冲突，仍需线下核验"])
             output.append(ListingRecommendation(listing=listing, monthly_true_cost=monthly, first_month_cash=first_month, weighted_commute_minutes=round(weighted, 1), worst_commute_minutes=worst_commute, weekly_total_commute_minutes=weekly_total, commute_fairness_gap_minutes=fairness_gap, commutes=commutes, hard_constraints_passed=not failures, score=score, reasons=reasons, tradeoffs=tradeoffs))
+        if not output and route_errors:
+            raise route_errors[0]
         output.sort(key=lambda item: (item.hard_constraints_passed, item.score), reverse=True)
         return {"recommendations": [item.model_dump(mode="json") for item in output], "trace": [*state.get("trace", []), "evaluate_and_rank"]}
 
@@ -164,8 +173,13 @@ class RentalDecisionService:
         return {"recommendations": [item.model_dump(mode="json") for item in recommendations], "llm_tokens": tokens, "llm_enhanced": enhanced, "llm_explanations_generated": explanations_generated, "trace": [*state.get("trace", []), "explain_recommendations"]}
 
     async def _finalize_response(self, state: DecisionState) -> DecisionState:
-        commute_assumption = "通勤时间来自高德地图实时路线规划" if self.maps.name == "amap" else "通勤时间为开发测试用模拟数据"
-        assumptions = ["当前房源为模拟上海房源", commute_assumption, "水电燃气统一按每月 ¥300 估算", "Agent判断不替代线下房源核验"]
+        commute_assumptions = {
+            "amap": "通勤时间来自高德地图真实路线规划",
+            "google-maps": "通勤时间来自 Google 地图真实路线规划",
+        }
+        commute_assumption = commute_assumptions.get(self.maps.name, "通勤时间为开发测试用模拟数据")
+        listing_assumption = "房源来自 RentCast 真实数据接口" if self.listings.name == "rentcast" else "当前房源为模拟上海房源"
+        assumptions = [listing_assumption, commute_assumption, "水电燃气统一按每月 ¥300 估算", "Agent判断不替代线下房源核验"]
         if state.get("unverified_preferences"): assumptions.append("部分自定义偏好缺少房源证据，未计入评分：" + "、".join(state["unverified_preferences"]))
         response = SearchResponse(provider=f"{self.listings.name} + {self.maps.name}", llm_enhanced=state.get("llm_enhanced", False), llm_preferences_parsed=state.get("llm_preferences_parsed", False), llm_explanations_generated=state.get("llm_explanations_generated", False), llm_tokens=state.get("llm_tokens", 0), total_candidates=len(state["candidates"]), recommendations=[ListingRecommendation.model_validate(item) for item in state["recommendations"]], assumptions=assumptions)
         return {"response": response.model_dump(mode="json"), "trace": [*state.get("trace", []), "finalize_response"]}
