@@ -19,7 +19,7 @@ from app.service import RentalDecisionService
 from app.skills.contract import ContractReviewReport, RentalContractReviewSkill
 from app.skills.listing_image import ListingImageAnalysisSkill, ListingImageReport
 from app.storage import OptionalArtifactStorage
-from app.validation import geography_consistency_error
+from app.validation import validate_geography
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 load_dotenv()
@@ -246,7 +246,7 @@ async def health():
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search(preferences: RentalPreferences, user_id=Depends(anonymous_user)):
-    if geography_error := geography_consistency_error(preferences):
+    if geography_error := await validate_geography(preferences, service.maps):
         raise HTTPException(status_code=422, detail=geography_error)
     async with SessionLocal() as db:
         run = AgentRun(anonymous_user_id=user_id, status="running", summary={"destinations": len(preferences.destinations)})

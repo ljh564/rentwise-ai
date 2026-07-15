@@ -31,6 +31,47 @@ class GoogleMapsProvider(MapProvider):
         self._interval = 1.05 / max(qps, 0.1)
         self._memory_cache: dict[str, dict] = {}
 
+    async def geocode_place(self, address: str) -> dict:
+        normalized = address.strip()
+        digest = hashlib.sha256(normalized.lower().encode()).hexdigest()
+        cache_key = f"google-geocode:{digest}"
+        data = self._memory_cache.get(cache_key)
+        if self.redis and data is None:
+            try:
+                cached = await self.redis.get(cache_key)
+                data = json.loads(cached) if cached else None
+            except RedisError:
+                pass
+        if data is None:
+            await self._rate_limit()
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get("https://maps.googleapis.com/maps/api/geocode/json", params={"address": normalized, "key": self.api_key, "language": "zh-CN"})
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("status") in {"REQUEST_DENIED", "OVER_QUERY_LIMIT"}:
+                raise GoogleMapsError(f"Google Geocoding unavailable: {payload.get('status')}")
+            results = payload.get("results", [])
+            if not results:
+                raise GoogleMapsError(f"Address could not be geocoded: {normalized}")
+            result = results[0]
+            components = {kind: component.get("short_name", "") for component in result.get("address_components", []) for kind in component.get("types", [])}
+            location = result["geometry"]["location"]
+            data = {
+                "formatted_address": result.get("formatted_address", normalized),
+                "country": components.get("country", ""),
+                "region": components.get("administrative_area_level_1", ""),
+                "city": components.get("locality") or components.get("administrative_area_level_2", ""),
+                "latitude": float(location["lat"]), "longitude": float(location["lng"]),
+            }
+            if self.redis:
+                try:
+                    await self.redis.set(cache_key, json.dumps(data, ensure_ascii=False), ex=30 * 24 * 60 * 60)
+                except RedisError:
+                    pass
+            else:
+                self._memory_cache[cache_key] = data
+        return data
+
     async def _rate_limit(self) -> None:
         async with self._lock:
             delay = self._next_request_at - time.monotonic()

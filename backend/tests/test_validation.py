@@ -1,5 +1,7 @@
 from app.models import Destination, RentalPreferences
-from app.validation import geography_consistency_error
+import pytest
+
+from app.validation import geography_consistency_error, validate_geography
 
 
 def preferences(city: str, address: str) -> RentalPreferences:
@@ -17,3 +19,33 @@ def test_allows_destination_in_same_country():
 
 def test_rejects_us_destination_for_chinese_city():
     assert geography_consistency_error(preferences("上海", "1 Main Street, Austin, TX 78701")) is not None
+
+
+class FakeGoogleGeocoder:
+    async def geocode_place(self, address: str) -> dict:
+        places = {
+            "Austin, TX": {"country": "US", "region": "TX", "city": "Austin", "latitude": 30.267, "longitude": -97.743},
+            "Paris, France": {"country": "FR", "region": "IDF", "city": "Paris", "latitude": 48.857, "longitude": 2.352},
+            "New York, NY": {"country": "US", "region": "NY", "city": "New York", "latitude": 40.713, "longitude": -74.006},
+            "Downtown Austin": {"country": "US", "region": "TX", "city": "Austin", "latitude": 30.268, "longitude": -97.742},
+        }
+        return places[address]
+
+
+async def _validate_with_fake(city: str, address: str):
+    return await validate_geography(preferences(city, address), FakeGoogleGeocoder())
+
+
+@pytest.mark.asyncio
+async def test_geocoding_rejects_different_country():
+    assert await _validate_with_fake("Austin, TX", "Paris, France") is not None
+
+
+@pytest.mark.asyncio
+async def test_geocoding_rejects_far_away_same_country():
+    assert await _validate_with_fake("Austin, TX", "New York, NY") is not None
+
+
+@pytest.mark.asyncio
+async def test_geocoding_allows_nearby_destination():
+    assert await _validate_with_fake("Austin, TX", "Downtown Austin") is None
